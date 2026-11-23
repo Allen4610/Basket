@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#141619">
+<meta name="color-scheme" content="dark">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" sizes="192x192">
+<title>篓子指数</title>
+<!-- 篓子指数手机版的外壳（用户 #866–#870）：页面结构和样式。逻辑在 app.js，数据格式在 data.js。
+     竖屏：上面名字和读数，中间 K 线，下面两排按钮（拇指够得着）；横屏：K 线铺满，右边一条竖的按钮。只有深色。
+     不引用任何外部的东西（字体、图片、脚本都不），没网也能整个打开。 -->
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #141619; --panel: #1b1d22; --line: #272a31; --text: #d8d9dd; --muted: #7c808a; --faint: #4a4e57; --hi: #2c2f36; --on: #33363d;
+  --up: rgb(248,41,71); --down: rgb(84,255,255);
+  --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px);
+  --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px);
+  --font: system-ui, -apple-system, Roboto, "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+  font: 14px/1.35 var(--font); overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button { font: inherit; color: inherit; background: none; border: 0; margin: 0; padding: 0; cursor: pointer;
+  touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+input { font: inherit; }
+i, em { font-style: normal; }
+.up { color: var(--up) !important; } .dn { color: var(--down) !important; } .mu { color: var(--muted); }
+.tag { display: inline-block; padding: 0 5px; border: 1px solid #343842; border-radius: 4px; font-size: 11px; line-height: 15px;
+  color: var(--muted); vertical-align: 1px; }
+
+/* ---------- 主界面（竖屏）：抬头、读数、K 线、按钮 ---------- */
+#app { position: fixed; inset: 0; display: flex; flex-direction: column; user-select: none; -webkit-user-select: none;
+  touch-action: none; font-variant-numeric: tabular-nums; }
+#hd { flex: none; position: relative; display: flex; align-items: center; min-height: 58px;
+  padding: calc(var(--st) + 5px) calc(var(--sr) + 2px) 5px calc(var(--sl) + 14px); border-bottom: 1px solid var(--line); }
+#hd .hm { flex: 1; min-width: 0; }
+.h1, .h2 { display: flex; align-items: baseline; gap: 7px; white-space: nowrap; overflow: hidden; }
+#h-n { font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#h-c { font-size: 12px; color: var(--muted); flex: none; }
+#h-px { font-size: 16px; font-weight: 600; }
+#h-pc { font-size: 13px; }
+#h-d { font-size: 12px; color: var(--muted); }
+#h-st { margin-left: auto; padding-left: 6px; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+#b-menu { flex: none; width: 44px; height: 44px; margin-left: 2px; border-radius: 10px; font-size: 22px; line-height: 44px; color: var(--muted); }
+#b-menu:active { background: var(--hi); }
+#prog { position: absolute; left: 0; bottom: -1px; height: 2px; width: 0; background: #4a9eff; transition: width .3s, opacity .3s; opacity: 0; }
+#prog.on { opacity: 1; }
+
+/* 读数：三行，四列对齐（日期 开 高 低 / 收 涨跌 振幅 量 / 四条均线）。
+   数字一位都不截：格子按比例分宽度（像表格），但不会比里面的字窄；字宽了别的格子让一让，一行实在放不下才折到下一行（读数跟着变高） */
+#rd { flex: none; min-height: 56px; padding: 4px calc(var(--sr) + 10px) 0 calc(var(--sl) + 14px); font-size: 12px; line-height: 16px;
+  border-bottom: 1px solid var(--line); }
+.rl { display: flex; flex-wrap: wrap; column-gap: 6px; white-space: nowrap; }
+.rl > span { flex: 1 0 0; color: var(--muted); }
+.rl:not(.ma) > span:first-child { flex-grow: 1.38; }
+.rl i { color: var(--text); }
+#r-d { color: var(--text); }
+.m5 { color: #d8d9dd !important; } .m10 { color: #d9a441 !important; } .m20 { color: #b06bd6 !important; } .m60 { color: #4a9eff !important; }
+.rl.ma { justify-content: space-between; font-size: 11.5px; }
+.rl.ma > span { flex: 0 0 auto; }
+.ma i { color: inherit; }
+#rd.nma .ma em { display: none; }   /* 这一只的均线值太宽、带着 “MA” 一行放不下：只写 5 10 20 60（颜色认得出是哪条） */
+/* 窄屏（360 左右）：均线前面不写 “MA”，格子间距小一点，字跟着屏宽略缩（最小 10.5px） */
+@media (max-width: 370px) {
+  #rd { font-size: clamp(10.5px, 3.33vw, 12px); padding-left: calc(var(--sl) + 12px); padding-right: calc(var(--sr) + 8px); }
+  .rl { column-gap: 4px; }
+  .rl:not(.ma) > span:first-child { flex-grow: 1.3; }
+  .rl.ma { font-size: inherit; }
+  .ma em { display: none; }
+}
+
+/* K 线 */
+#cw { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+#cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; }
+#msg { position: absolute; left: 0; right: 0; top: 42%; padding: 0 24px; text-align: center; color: var(--muted); font-size: 13px; pointer-events: none; }
+/* 横屏压在图上的两行：名字 最新价 涨跌（十字线开着时换成那一根的读数）/ 均线。数字一位都不截：每一项是一个整体，
+   一行放不下就整项折到下一行；十字线开着时名字最多 8 个字宽，把地方让给数字 */
+#ov { display: none; position: absolute; left: 8px; top: calc(var(--st) + 3px); right: 4px; pointer-events: none;
+  font-size: 12px; line-height: 16px; text-shadow: 0 0 2px var(--bg), 0 0 2px var(--bg), 0 0 3px var(--bg); }   /* 字边一圈底色：十字线、均线从字下面穿过也看得清 */
+#ov b { font-size: 13px; font-weight: 600; margin-right: 6px; white-space: nowrap; }
+#ov .o1 > span { margin-right: 6px; }
+#ov.x #o-px, #ov.x #o-pc { display: none; }
+#ov.x #o-n { display: inline-block; max-width: 8em; overflow: hidden; text-overflow: ellipsis; vertical-align: top; }
+#o-rd > span, #o-ma > span, #o-st { display: inline-block; white-space: nowrap; }
+#o-rd > span { margin-right: 7px; }
+#o-rd i { color: var(--text); }
+#o-ma span { margin-right: 9px; }
+
+/* 下面两排按钮：拇指区 */
+#tb { flex: none; display: grid; gap: 6px; padding: 6px calc(var(--sr) + 10px) calc(var(--sb) + 8px) calc(var(--sl) + 10px);
+  border-top: 1px solid var(--line); }
+.tr { display: flex; gap: 8px; align-items: center; }
+.tr .sp { flex: 1; }
+.bt { flex: none; height: 44px; min-width: 56px; padding: 0 12px; border-radius: 10px; background: var(--panel); color: var(--text); font-size: 15px; }
+.bt:active, .seg button:active { background: var(--hi); }
+.bt.z { font-size: 22px; line-height: 44px; }
+.seg { flex: none; display: flex; border-radius: 10px; background: var(--panel); overflow: hidden; }
+.seg button { width: 54px; height: 44px; color: var(--muted); font-size: 15px; }
+.seg button.on { background: var(--on); color: var(--text); }
+#b-search { flex: 0 1 132px; min-width: 96px; }
+
+/* ---------- 横屏：K 线铺满，右边一条竖按钮 ---------- */
+#rail { display: none; }
+html.land #app { flex-direction: row; }
+html.land #hd, html.land #rd, html.land #tb { display: none; }
+html.land #cw { margin-left: var(--sl); }
+html.land #ov { display: block; }
+html.land #rail { display: flex; flex: none; flex-direction: column; justify-content: center; align-items: center; gap: 2px;
+  width: calc(52px + var(--sr)); padding: calc(var(--st) + 3px) calc(var(--sr) + 4px) calc(var(--sb) + 3px) 4px; border-left: 1px solid var(--line); }
+#rail button { flex: 0 1 42px; min-height: 30px; max-height: 44px; width: 44px; border-radius: 9px; font-size: 15px; color: var(--muted); }
+#rail button.z { font-size: 21px; color: var(--text); }
+#rail button.on { background: var(--on); color: var(--text); }
+#rail button:active { background: var(--hi); }
+#rail .gap { flex: 0 1 8px; min-height: 2px; }
+#rail .go { color: var(--text); }
+/* 矮的横屏（高 380 以下，比如 360 宽的手机横过来）：去掉组之间的空隙，8 个按钮平分高度（320 高也有 40 px）；组之间改成一条细线 */
+@media (max-height: 380px) {
+  html.land #rail { gap: 0; padding-top: var(--st); padding-bottom: var(--sb); }
+  #rail .gap { display: none; }
+  #rail button { flex: 1 1 0; min-height: 0; position: relative; }
+  #rail .gap + button::before { content: ''; position: absolute; left: 10px; right: 10px; top: 0; height: 1px; background: var(--line); }
+}
+
+/* ---------- 面板（搜索、列表、菜单）：从下面滑上来 ---------- */
+#mask { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.5); opacity: 0; visibility: hidden;
+  transition: opacity .18s, visibility 0s .18s; touch-action: none; }
+#mask.on { opacity: 1; visibility: visible; transition: opacity .18s; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; display: flex; flex-direction: column; background: var(--bg);
+  transform: translate3d(0, 102%, 0); visibility: hidden; will-change: transform; touch-action: none;
+  transition: transform .18s cubic-bezier(.2,.7,.3,1), visibility 0s .18s; user-select: none; -webkit-user-select: none;
+  font-variant-numeric: tabular-nums; }
+.sheet.on { transform: none; visibility: visible; transition: transform .18s cubic-bezier(.2,.7,.3,1); }
+.sheet.full { top: 0; }
+.sheet.bot { height: 65%; background: var(--panel); border-radius: 14px 14px 0 0; padding-bottom: var(--sb); }
+#sh-menu.bot { height: auto; max-height: 85%; }
+html.land .sheet.bot { left: auto; right: 0; width: min(460px, 100%); height: 92%; }
+html.land #sh-menu.bot { height: auto; }
+.grab { flex: none; height: 24px; display: flex; justify-content: center; align-items: center; cursor: grab; touch-action: none; }
+.grab::before { content: ''; width: 36px; height: 4px; border-radius: 2px; background: #3a3e47; }
+.rows { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+.row { flex: none; display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 calc(var(--sr) + 16px) 0 calc(var(--sl) + 16px);
+  border-bottom: 1px solid var(--line); cursor: pointer; contain: layout paint style; }
+.row:active { background: var(--hi); }
+.row.cur { background: #1f2329; }
+.rn { flex: 1; min-width: 0; }
+.rn b { display: block; font-size: 15px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rn small { display: block; margin-top: 1px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rn small .tag { margin-left: 5px; }
+.rv { flex: none; min-width: 72px; text-align: right; }
+.rv span { display: block; font-size: 15px; }
+.rv em { display: block; font-size: 12px; color: var(--muted); }
+.empty { padding: 28px 20px; color: var(--muted); text-align: center; line-height: 1.7; }
+
+/* 搜索：输入框在最下面（键盘正上方），最好的结果离输入框最近 */
+#s-res { display: flex; flex-direction: column-reverse; padding-top: var(--st); }
+#s-lab { flex: none; padding: 5px calc(var(--sl) + 16px); font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
+#s-bar { flex: none; display: flex; gap: 8px; padding: 6px calc(var(--sr) + 10px) calc(var(--sb) + 8px) calc(var(--sl) + 10px); background: var(--panel); }
+#s-in { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg);
+  color: var(--text); font-size: 16px; outline: none; user-select: text; -webkit-user-select: text; touch-action: manipulation; }
+#s-in:focus { border-color: #3d424c; }
+#s-x { flex: none; height: 44px; padding: 0 14px; border-radius: 10px; color: var(--muted); font-size: 15px; }
+#s-x:active { background: var(--hi); }
+
+/* 列表：标签在最下面 */
+#l-tabs { flex: none; display: flex; gap: 6px; padding: 6px calc(var(--sr) + 10px) 8px calc(var(--sl) + 10px); overflow-x: auto;
+  border-top: 1px solid var(--line); scrollbar-width: none; touch-action: pan-x; }
+#l-tabs::-webkit-scrollbar { display: none; }
+#l-tabs button { flex: none; height: 44px; padding: 0 16px; border-radius: 22px; background: var(--bg); color: var(--muted); font-size: 14px; white-space: nowrap; }
+#l-tabs button.on { background: var(--on); color: var(--text); }
+
+/* 菜单 */
+.mb { flex: 1; min-height: 0; overflow-y: auto; padding: 2px calc(var(--sr) + 16px) 12px calc(var(--sl) + 16px); touch-action: pan-y; }
+.mt { margin: 6px 0 6px; font-size: 12px; color: var(--muted); }
+#m-info { line-height: 1.75; margin-bottom: 8px; }
+#m-info b { font-weight: 500; }
+.mbtn { display: block; width: 100%; min-height: 48px; margin: 6px 0; padding: 0 14px; border-radius: 10px; background: var(--bg); text-align: left; font-size: 15px; }
+.mbtn:active { background: var(--hi); }
+.mbtn.warn { color: var(--up); }
+.mbtn:disabled { opacity: .5; }
+#m-ver { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+/* 第一次打开：输口令。两指捏合不放大页面（解开后整个界面都不让捏放大，放大了就回不来） */
+#lock { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; justify-content: center; background: var(--bg);
+  padding: calc(var(--st) + 24px) calc(var(--sr) + 24px) calc(var(--sb) + 24px) calc(var(--sl) + 24px); touch-action: pan-x pan-y; }
+#lock .lk { width: 100%; max-width: 420px; margin: 0 auto; }
+#lock img { display: block; width: 60px; height: 60px; border-radius: 14px; margin-bottom: 14px; }
+#lock h1 { margin: 0 0 8px; font-size: 22px; font-weight: 600; }
+#lk-tip { margin: 0 0 18px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+#lk-f { display: flex; gap: 8px; margin: 0; }
+/* 口令框像密码框一样显示圆点（手机键盘不记、不联想）；右边“显示”点一下能看清输的字 */
+#lk-w { flex: 1; min-width: 0; position: relative; }
+#lk-in { display: block; width: 100%; height: 48px; padding: 0 58px 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel);
+  color: var(--text); font-size: 18px; letter-spacing: 1px; outline: none; user-select: text; -webkit-user-select: text; }
+#lk-in:focus { border-color: #3d424c; }
+#lk-eye { position: absolute; top: 0; right: 0; width: 54px; height: 48px; border-radius: 0 10px 10px 0; color: var(--muted); font-size: 13px; }
+#lk-eye:active { background: var(--hi); }
+#lk-go { flex: none; height: 48px; min-width: 76px; padding: 0 18px; border-radius: 10px; background: #2b4c7e; color: #fff; font-size: 16px; }
+#lk-go:disabled { opacity: .6; }
+#lk-err { min-height: 22px; margin: 12px 0 0; color: var(--up); font-size: 14px; }
+#lk-skip { height: 44px; margin-top: 10px; padding: 0 4px; color: var(--muted); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
+
+/* 提示条 */
+#toast { position: fixed; left: 50%; bottom: calc(var(--sb) + 128px); z-index: 30; max-width: 86%; padding: 9px 16px; border-radius: 10px;
+  background: #2c2f36; color: var(--text); font-size: 14px; line-height: 1.4; text-align: center; opacity: 0; transform: translate(-50%, 6px);
+  transition: opacity .16s, transform .16s; pointer-events: none; }
+#toast.on { opacity: 1; transform: translate(-50%, 0); }
+#toast.tap { pointer-events: auto; background: #2b4c7e; color: #fff; cursor: pointer; }
+html.land #toast { bottom: calc(var(--sb) + 18px); left: calc(50% - 26px); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="hd">
+    <div class="hm">
+      <div class="h1"><span id="h-n">篓子指数</span><span id="h-c"></span></div>
+      <div class="h2"><span id="h-px"></span><span id="h-pc"></span><span id="h-d"></span><span id="h-st"></span></div>
+    </div>
+    <button id="b-menu" data-a="menu" aria-label="菜单">⋯</button>
+    <div id="prog"></div>
+  </header>
+  <div id="rd">
+    <div class="rl"><span id="r-d"></span><span>开 <i id="r-o"></i></span><span>高 <i id="r-h"></i></span><span>低 <i id="r-l"></i></span></div>
+    <div class="rl"><span>收 <i id="r-c"></i></span><span>涨跌 <i id="r-p"></i></span><span>振幅 <i id="r-a"></i></span><span>量 <i id="r-v"></i></span></div>
+    <div class="rl ma"><span class="m5"><em>MA</em>5 <i id="r-m0"></i></span><span class="m10"><em>MA</em>10 <i id="r-m1"></i></span><span class="m20"><em>MA</em>20 <i id="r-m2"></i></span><span class="m60"><em>MA</em>60 <i id="r-m3"></i></span></div>
+  </div>
+  <div id="cw">
+    <canvas id="cv"></canvas>
+    <div id="ov">
+      <div class="o1"><b id="o-n"></b><span id="o-px"></span><span id="o-pc"></span><span id="o-rd" class="mu"></span><span id="o-st" class="mu"></span></div>
+      <div class="o2" id="o-ma"></div>
+    </div>
+    <div id="msg"></div>
+  </div>
+  <nav id="tb">
+    <div class="tr">
+      <div class="seg"><button data-a="d">日</button><button data-a="w">周</button><button data-a="m">月</button></div>
+      <span class="sp"></span>
+      <button class="bt z" data-z="-" aria-label="缩小">−</button><button class="bt z" data-z="+" aria-label="放大">+</button>
+    </div>
+    <div class="tr">
+      <button class="bt" data-a="prev" aria-label="上一只">‹</button><button class="bt" data-a="next" aria-label="下一只">›</button>
+      <span class="sp"></span>
+      <button class="bt" data-a="list">列表</button><button class="bt" id="b-search" data-a="search">搜索</button>
+    </div>
+  </nav>
+  <nav id="rail">
+    <button data-a="d">日</button><button data-a="w">周</button><button data-a="m">月</button>
+    <span class="gap"></span>
+    <button class="z" data-z="-" aria-label="缩小">−</button><button class="z" data-z="+" aria-label="放大">+</button>
+    <span class="gap"></span>
+    <button class="go" data-a="prev" aria-label="上一只">‹</button><button class="go" data-a="next" aria-label="下一只">›</button>
+    <span class="gap"></span>
+    <button class="go" data-a="search">搜</button>
+  </nav>
+</div>
+
+<div id="mask"></div>
+<div id="sh-search" class="sheet full" role="dialog" aria-label="搜索">
+  <div id="s-res" class="rows"></div>
+  <div id="s-lab"></div>
+  <div id="s-bar">
+    <input id="s-in" type="text" placeholder="代码 / 拼音首字母 / 名字" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="search">
+    <button id="s-x">取消</button>
+  </div>
+</div>
+<div id="sh-list" class="sheet bot" role="dialog" aria-label="列表">
+  <div class="grab"></div>
+  <div id="l-rows" class="rows"></div>
+  <div id="l-tabs"></div>
+</div>
+<div id="sh-menu" class="sheet bot" role="dialog" aria-label="菜单">
+  <div class="grab"></div>
+  <div class="mb">
+    <div class="mt">数据</div>
+    <div id="m-info"></div>
+    <button class="mbtn" data-m="check">检查更新</button>
+    <button class="mbtn" data-m="all">重新下载全部数据</button>
+    <button class="mbtn warn" data-m="wipe" id="m-wipe">清掉口令和数据（换口令时用）</button>
+    <div id="m-ver"></div>
+  </div>
+</div>
+
+<div id="lock" hidden>
+  <div class="lk">
+    <img src="icon-192.png" alt="" loading="lazy">
+    <h1>篓子指数</h1>
+    <p id="lk-tip"></p>
+    <form id="lk-f" autocomplete="off">
+      <div id="lk-w">
+        <input id="lk-in" type="password" placeholder="xxxx-xxxx-xxxx" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go">
+        <button id="lk-eye" type="button" aria-label="显示口令" aria-pressed="false">显示</button>
+      </div>
+      <button id="lk-go" type="submit">打开</button>
+    </form>
+    <p id="lk-err"></p>
+    <button id="lk-skip" hidden>先接着看手机上的旧数据</button>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
